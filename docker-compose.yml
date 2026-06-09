@@ -1,0 +1,99 @@
+services:
+
+  # ── Nginx reverse proxy ─────────────────────
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - jenkins
+      - registry
+      - keycloak
+    networks:
+      - devnet
+    restart: unless-stopped
+
+  # ── Docker Registry ─────────────────────────
+  registry:
+    image: registry:2
+    environment:
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /data
+      REGISTRY_HTTP_ADDR: 0.0.0.0:5000
+    volumes:
+      - registry_data:/data
+    networks:
+      - devnet
+    restart: unless-stopped
+    # Note: port 5000 is NOT exposed to host — only via Nginx
+
+  # ── Jenkins ──────────────────────────────────
+  jenkins:
+    build:
+      context: .
+      dockerfile: jenkins/Dockerfile
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - JENKINS_URL=https://jenkins.local
+      # Point to our Nginx-proxied registry
+      - REGISTRY_URL=registry.local
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      # Mount host Docker socket for docker-in-docker style builds
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount certs so Jenkins can verify the registry
+      - ./nginx/certs/server.crt:/etc/docker/certs.d/registry.local/ca.crt:ro
+    group_add:
+      # Match the docker socket GID on the host (usually 999 on Linux)
+      # Run: stat -c '%g' /var/run/docker.sock  to verify
+      - "960"
+    networks:
+      - devnet
+    restart: unless-stopped
+
+  # ── PostgreSQL for Keycloak ──────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - devnet
+    restart: unless-stopped
+
+  # ── Keycloak ─────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_secret
+      KC_HOSTNAME: auth.local
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_PROXY: edge
+      # Admin credentials — change these!
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin_password
+    depends_on:
+      - postgres
+    networks:
+      - devnet
+    restart: unless-stopped
+
+volumes:
+  jenkins_home:
+  registry_data:
+  postgres_data:
+
+networks:
+  devnet:
+    driver: bridge

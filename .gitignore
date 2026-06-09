@@ -1,0 +1,35 @@
+# TLS certificates and keys - never commit these
+nginx/certs/
+jenkins/server.crt
+server.crt
+server.key
+
+# Environment secrets
+.env
+
+# Jenkins runtime data
+jenkins_home/
+jenkins/workspace/
+
+# Docker volumes data
+volumes/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Temp files
+tmp/
+temp/
